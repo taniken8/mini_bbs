@@ -46,9 +46,6 @@ if (isset($_REQUEST['favorites'])) {
     $_REQUEST['favorites']
   ));
 }
-header("Location: index.php?page={$page}");
-exit();
-
 }
 
 //返信ボタンが押された場合
