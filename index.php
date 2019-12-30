@@ -11,7 +11,6 @@ if (isset($_SESSION['id']) && $_SESSION['time'] + 3600 > time()) {
   header('Location: login.php');
   exit();
 }
-
 if (!empty($_POST)) {
   if ($_POST['message'] !== '') {
     $statement = $db->prepare('INSERT INTO posts SET message=?, member_id=?, reply_message_id=?, created=NOW()');
@@ -48,6 +47,44 @@ if (isset($_REQUEST['favorites'])) {
 }
 }
 
+//リツイートが押された場合
+if (isset($_REQUEST['retweet'])) {
+  //ログインしているユーザーが各記事をいいねしているかチェック
+    $retweet_check = $db->prepare('SELECT COUNT(*) AS cnt FROM posts WHERE member_id=? AND retweet_id=?');
+    $retweet_check->execute(array(
+      $member['id'],
+      $_REQUEST['retweet']
+    ));
+    $retweet_result = $retweet_check->fetch();
+  //リツイート元のメッセージを取得
+    $retweet = $db->prepare('SELECT m.name, p.* FROM members m, posts p WHERE m.id=p.member_id AND p.id=? ORDER BY p.created DESC');
+    $retweet->execute(array($_REQUEST['retweet']));
+    $retweet_table = $retweet->fetch();
+  //リツイートであることがわかるように表示
+    $retweet_message = '@' . $member['name'] . 'さんがリツイートしました' . '  ' . $retweet_table['message'] . '(' . $retweet_table['name'] . ')';
+  
+  //リツイートの削除
+    if ($retweet_result['cnt'] > 0) {
+      $del = $db->prepare('DELETE FROM posts WHERE member_id=? AND retweet_id=?');
+      $del->execute(array(
+        $member['id'],
+        $_REQUEST['retweet']
+      ));
+      header('Location: index.php');
+      exit();
+    } else {
+  //リツイート
+      $insert_retweet = $db->prepare('INSERT INTO posts SET message=?, member_id=?, retweet_id=?, created=NOW()');
+      $insert_retweet->execute(array(
+      $retweet_message,
+      $member['id'],
+      $_REQUEST['retweet']
+      ));
+      header('Location: index.php');
+      exit();
+  }
+  }
+
 //返信ボタンが押された場合
 if (isset($_REQUEST['res'])) {
   $response = $db->prepare('SELECT m.name, m.picture, p.* FROM members m, posts p WHERE m.id=p.member_id AND p.id=?');
@@ -55,25 +92,30 @@ if (isset($_REQUEST['res'])) {
   $table = $response->fetch();
   $message = '@' . $table['name'] . '  ' . $table['message'];
 }
-
-
 //ページネーション
 $page = $_REQUEST['page'];
 if ($page == '') {
   $page = 1;
 }
 $page = max($page, 1);
-
 $counts = $db->query('SELECT COUNT(*) as cnt FROM posts');
 $count = $counts->fetch();
 $maxPage = ceil($count['cnt']/5);
 $page = min($page, $maxPage);
-
 $start = ($page-1)*5;
-
 $posts = $db->prepare('SELECT m.name, m.picture, p.* FROM members m, posts p WHERE m.id=p.member_id ORDER BY p.created DESC LIMIT ?, 5');
 $posts->bindParam(1, $start, PDO::PARAM_INT);
 $posts->execute();
+
+//htmlspecialcharsのショートカット
+function h($value) {
+  return htmlspecialchars($value, ENT_QUOTES);
+}
+
+//本文内のURLにリンクを設定
+function makeLink($value) {
+  return mb_ereg_replace("(https?)(://[[:alnum:]\+\$\;\?\.%,!#~*/:@&=_-]+)",'<a href="\1\2">\1\2</a>' , $value);
+}
 
 ?>
 
@@ -84,7 +126,7 @@ $posts->execute();
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta http-equiv="X-UA-Compatible" content="ie=edge">
 	<title>ひとこと掲示板</title>
-  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.4.0/css/font-awesome.min.css">
+  <link href="https://use.fontawesome.com/releases/v5.6.1/css/all.css" rel="stylesheet">
 
 	<link rel="stylesheet" href="style.css" />
 </head>
@@ -98,10 +140,10 @@ $posts->execute();
   	<div style="text-align: right"><a href="logout.php">ログアウト</a></div>
     <form action="" method="post">
       <dl>
-        <dt><?php print(htmlspecialchars($member['name'], ENT_QUOTES)); ?>さん、メッセージをどうぞ</dt>
+        <dt><?php print h($member['name']); ?>さん、メッセージをどうぞ</dt>
         <dd>
-          <textarea name="message" cols="50" rows="5"><?php print(htmlspecialchars($message, ENT_QUOTES)); ?></textarea>
-          <input type="hidden" name="reply_post_id" value="<?php print(htmlspecialchars($_REQUEST['res'])); ?>" />
+          <textarea name="message" cols="50" rows="5"><?php print h($message); ?></textarea>
+          <input type="hidden" name="reply_post_id" value="<?php print h($_REQUEST['res']); ?>" />
         </dd>
       </dl>
       <div>
@@ -113,15 +155,19 @@ $posts->execute();
 
     <?php foreach($posts as $post): ?>
     <div class="msg">
-    <img class="member_picture" src="member_picture/<?php print(htmlspecialchars($post['picture'], ENT_QUOTES)); ?>" width="48" height="48" alt="" />
-    <p><?php print(htmlspecialchars($post['message'], ENT_QUOTES)); ?><span class="name">（<?php print(htmlspecialchars($post['name'], ENT_QUOTES)); ?>）</span>[<a href="index.php?res=<?php print(htmlspecialchars($post['id'], ENT_QUOTES)); ?>">Re</a>]</p>
-    <p class="day"><a href="view.php?id=<?php print(htmlspecialchars($post['id'], ENT_QUOTES)); ?>"><?php print(htmlspecialchars($post['created'], ENT_QUOTES)); ?></a>
+    <img class="member_picture" src="member_picture/<?php print h($post['picture']); ?>" width="48" height="48" alt="" />
+    <p><?php print makeLink(h($post['message'])); ?>
+    <?php if ($retweet_result === ''): ?>
+    <span class="name">（<?php print h($post['name']); ?>）
+    <?php endif; ?>
+  </span>[<a href="index.php?res=<?php print h($post['id']); ?>">Re</a>]</p>
+    <p class="day"><a href="view.php?id=<?php print h($post['id']); ?>"><?php print h($post['created']); ?></a>
   <?php if ($post['reply_message_id'] > 0): ?>
-    <a href="view.php?id=<?php print(htmlspecialchars($post['reply_message_id'], ENT_QUOTES)); ?>">
+    <a href="view.php?id=<?php print h($post['reply_message_id']); ?>">
     返信元のメッセージ</a>
   <?php endif; ?>
   <?php if ($_SESSION['id'] === $post['member_id']): ?>
-[<a href="delete.php?id=<?php print(htmlspecialchars($post['id'], ENT_QUOTES)); ?>"
+[<a href="delete.php?id=<?php print h($post['id']); ?>"
 style="color: #F33;">削除</a>]
 <?php endif; ?>
 
@@ -136,9 +182,9 @@ style="color: #F33;">削除</a>]
 ?>
 <?php if ($favorite_check['cnt'] > 0): ?>
 <!--いいね数が０より大きければ-->
-  <a href="index.php?favorites=<?php print(htmlspecialchars($post['id'], ENT_QUOTES)); ?>&page=<?php print(htmlspecialchars($page, ENT_QUOTES)); ?>"><span class="fa fa-heart like_btn"></span></a>
+  <a href="index.php?favorites=<?php print h($post['id']); ?>"><span class="fa fa-heart like_btn"></span></a>
 <?php else: ?>
-  <a href="index.php?favorites=<?php print(htmlspecialchars($post['id'], ENT_QUOTES)); ?>&page=<?php print(htmlspecialchars($page, ENT_QUOTES)); ?>"><span class="fa fa-heart like_btn_unlike"></span></a>
+  <a href="index.php?favorites=<?php print h($post['id']); ?>"><span class="fa fa-heart like_btn_unlike"></span></a>
 <?php endif; ?>
 
 
@@ -148,7 +194,33 @@ $favorite_counts->execute(array($post['id']));
 $favorite_count = $favorite_counts->fetch();
 ?>
 
-<?php print(htmlspecialchars($favorite_count['cnt'], ENT_QUOTES)); ?>
+<?php print h($favorite_count['cnt']); ?>
+
+<?php
+//ログインユーザーが各記事に対してリツイートしているかをチェック
+  $retweet_check = $db->prepare('SELECT COUNT(*) AS cnt FROM posts WHERE member_id=? AND retweet_id=?');
+  $retweet_check->execute(array(
+  $member['id'],
+  $post['id']
+  ));
+  $retweet = $retweet_check->fetch();
+?>
+<?php if ($retweet['cnt'] > 0): ?>
+<!--リツイート数が０より大きければ-->
+  <a href="index.php?retweet=<?php print h($post['id']); ?>"><i class="fas fa-retweet retweet"></i></a>
+<?php else: ?>
+  <a href="index.php?retweet=<?php print h($post['id']); ?>"><i class="fas fa-retweet unretweet"></i></a>
+<?php endif; ?>
+
+<?php //リツイート数の集計
+$retweet_counts = $db->prepare('SELECT COUNT(*) as cnt FROM posts WHERE retweet_id=?');
+$retweet_counts->execute(array($post['id']));
+$retweet_count = $retweet_counts->fetch();
+?>
+
+<!--リツイート数の表示-->
+<?php print h($retweet_count['cnt']); ?>
+
     </div>
 <?php endforeach; ?>
 

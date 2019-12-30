@@ -143,10 +143,17 @@ li {
 	color: #ff2581;
   }
 
+.retweet {
+	color: #ff2581;
+}
+
 .like_btn_unlike {
 	color: rgb(204, 194, 203);
 }
 
+.unretweet {
+	color: rgb(204, 194, 203);
+}
 
 .msg .favorite {
 	display: inline;
