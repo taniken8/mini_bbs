@@ -24,14 +24,19 @@ if (!empty($_POST)) {
   }
 }
 
+
+//----↓↓↓↓↓↓↓↓↓↓↓↓↓↓ここからいいね機能↓↓↓↓↓↓↓↓↓↓↓↓↓↓----
 //いいねマークが押された場合
 if (isset($_REQUEST['favorites'])) {
+  //ログインしているユーザーが各記事をいいねしているかチェック
   $check = $db->prepare('SELECT COUNT(*) AS cnt FROM favorites WHERE member_id=? AND post_id=?');
   $check->execute(array(
     $member['id'],
     $_REQUEST['favorites']
   ));
   $result = $check->fetch();
+
+  //すでにいいねされていた場合は削除
   if ($result['cnt'] > 0) {
     $del = $db->prepare('DELETE FROM favorites WHERE member_id=? AND post_id=?');
     $del->execute(array(
@@ -39,6 +44,7 @@ if (isset($_REQUEST['favorites'])) {
       $_REQUEST['favorites']
     ));
   } else {
+  //いいねされていなければ挿入
     $favorite = $db->prepare('INSERT INTO favorites SET member_id=?, post_id=?, created=NOW()');
     $favorite->execute(array(
     $member['id'],
@@ -46,44 +52,49 @@ if (isset($_REQUEST['favorites'])) {
   ));
 }
 }
+//----↑↑↑↑↑↑↑↑↑↑↑↑↑ここまでいいね機能↑↑↑↑↑↑↑↑↑↑↑↑↑----
 
+//----↓↓↓↓↓↓↓↓↓↓↓↓↓↓ここからリツイート機能↓↓↓↓↓↓↓↓↓↓↓↓↓↓----
 //リツイートが押された場合
 if (isset($_REQUEST['retweet'])) {
-  //ログインしているユーザーが各記事をいいねしているかチェック
-    $retweet_check = $db->prepare('SELECT COUNT(*) AS cnt FROM posts WHERE member_id=? AND retweet_id=?');
-    $retweet_check->execute(array(
+  //ログインしているユーザーが各記事をリツイートしているかチェック
+  $retweet_check = $db->prepare('SELECT COUNT(*) AS cnt FROM posts WHERE member_id=? AND retweet_id=?');
+  $retweet_check->execute(array(
+    $member['id'],
+    $_REQUEST['retweet']
+  ));
+  $retweet_result = $retweet_check->fetch();
+
+  //リツイート元のメッセージを取得
+  $retweet = $db->prepare('SELECT m.name, p.* FROM members m, posts p WHERE m.id=p.member_id AND p.id=? ORDER BY p.created DESC');
+  $retweet->execute(array($_REQUEST['retweet']));
+  $retweet_table = $retweet->fetch();
+  //リツイート文を成形
+  $retweet_message = '@' . $member['name'] . 'さんがリツイートしました' . '  ' . $retweet_table['message'] . '(' . $retweet_table['name'] . ')';
+
+  //すでにリツイートされている場合は削除
+  if ($retweet_result['cnt'] > 0) {
+    $del = $db->prepare('DELETE FROM posts WHERE member_id=? AND retweet_id=?');
+    $del->execute(array(
       $member['id'],
       $_REQUEST['retweet']
     ));
-    $retweet_result = $retweet_check->fetch();
-  //リツイート元のメッセージを取得
-    $retweet = $db->prepare('SELECT m.name, p.* FROM members m, posts p WHERE m.id=p.member_id AND p.id=? ORDER BY p.created DESC');
-    $retweet->execute(array($_REQUEST['retweet']));
-    $retweet_table = $retweet->fetch();
-  //リツイートであることがわかるように表示
-    $retweet_message = '@' . $member['name'] . 'さんがリツイートしました' . '  ' . $retweet_table['message'] . '(' . $retweet_table['name'] . ')';
-  
-  //リツイートの削除
-    if ($retweet_result['cnt'] > 0) {
-      $del = $db->prepare('DELETE FROM posts WHERE member_id=? AND retweet_id=?');
-      $del->execute(array(
-        $member['id'],
-        $_REQUEST['retweet']
-      ));
-      header('Location: index.php');
-      exit();
-    } else {
-  //リツイート
-      $insert_retweet = $db->prepare('INSERT INTO posts SET message=?, member_id=?, retweet_id=?, created=NOW()');
-      $insert_retweet->execute(array(
+    header('Location: index.php');
+    exit();
+  } else {
+  //リツイートされていなければ挿入
+    $insert_retweet = $db->prepare('INSERT INTO posts SET message=?, member_id=?,retweet_id=?, created=NOW()');
+    $insert_retweet->execute(array(
       $retweet_message,
       $member['id'],
       $_REQUEST['retweet']
-      ));
-      header('Location: index.php');
-      exit();
+    ));
+    header('Location: index.php');
+    exit();
   }
-  }
+}
+//----↑↑↑↑↑↑↑↑↑↑↑↑↑ここまでリツイート機能↑↑↑↑↑↑↑↑↑↑↑↑↑----//
+
 
 //返信ボタンが押された場合
 if (isset($_REQUEST['res'])) {
@@ -153,75 +164,79 @@ function makeLink($value) {
       </div>
     </form>
 
-    <?php foreach($posts as $post): ?>
+<?php foreach($posts as $post): ?>
     <div class="msg">
     <img class="member_picture" src="member_picture/<?php print h($post['picture']); ?>" width="48" height="48" alt="" />
     <p><?php print makeLink(h($post['message'])); ?>
-    <?php if ($retweet_result === ''): ?>
+    <?php if ($post['retweet_id'] === '0'): ?>
     <span class="name">（<?php print h($post['name']); ?>）
     <?php endif; ?>
-  </span>[<a href="index.php?res=<?php print h($post['id']); ?>">Re</a>]</p>
+    </span>[<a href="index.php?res=<?php print h($post['id']); ?>">Re</a>]</p>
     <p class="day"><a href="view.php?id=<?php print h($post['id']); ?>"><?php print h($post['created']); ?></a>
   <?php if ($post['reply_message_id'] > 0): ?>
-    <a href="view.php?id=<?php print h($post['reply_message_id']); ?>">
+      <a href="view.php?id=<?php print h($post['reply_message_id']); ?>">
     返信元のメッセージ</a>
   <?php endif; ?>
   <?php if ($_SESSION['id'] === $post['member_id']): ?>
-[<a href="delete.php?id=<?php print h($post['id']); ?>"
-style="color: #F33;">削除</a>]
-<?php endif; ?>
+    [<a href="delete.php?id=<?php print h($post['id']); ?>"
+    style="color: #F33;">削除</a>]
+  <?php endif; ?>
 
-<?php
-//ログインユーザーが各記事に対していいねしているかをチェック
-  $favorites_check = $db->prepare('SELECT COUNT(*) AS cnt FROM favorites WHERE member_id=? AND post_id=?');
-  $favorites_check->execute(array(
-  $member['id'],
-  $post['id']
-  ));
-  $favorite_check = $favorites_check->fetch();
-?>
-<?php if ($favorite_check['cnt'] > 0): ?>
-<!--いいね数が０より大きければ-->
-  <a href="index.php?favorites=<?php print h($post['id']); ?>"><span class="fa fa-heart like_btn"></span></a>
-<?php else: ?>
-  <a href="index.php?favorites=<?php print h($post['id']); ?>"><span class="fa fa-heart like_btn_unlike"></span></a>
-<?php endif; ?>
+  <!----↓↓↓↓↓↓↓↓↓↓↓↓↓↓ここからいいねの表示機能↓↓↓↓↓↓↓↓↓↓↓↓↓↓---->
+  <?php
+  //ログインユーザーが各記事をいいねしているかチェック
+    $favorites_check = $db->prepare('SELECT COUNT(*) AS cnt FROM favorites WHERE member_id=? AND post_id=?');
+    $favorites_check->execute(array(
+    $member['id'],
+    $post['id']
+    ));
+    $favorite_check = $favorites_check->fetch();
+  ?>
+  <?php if ($favorite_check['cnt'] > 0): ?>
+    <!--いいねされている場合の表示-->
+    <a href="index.php?favorites=<?php print h($post['id']); ?>"><span class="fa fa-heart like_btn"></span></a>
+  <?php else: ?>
+    <!--いいねされていない場合の表示-->
+    <a href="index.php?favorites=<?php print h($post['id']); ?>"><span class="fa fa-heart like_btn_unlike"></span></a>
+  <?php endif; ?>
 
+  <?php //いいね数の集計
+  $favorite_counts = $db->prepare('SELECT COUNT(*) as cnt FROM favorites WHERE post_id=?');
+  $favorite_counts->execute(array($post['id']));
+  $favorite_count = $favorite_counts->fetch();
+  ?>
 
-<?php //いいねの数の集計
-$favorite_counts = $db->prepare('SELECT COUNT(*) as cnt FROM favorites WHERE post_id=?');
-$favorite_counts->execute(array($post['id']));
-$favorite_count = $favorite_counts->fetch();
-?>
+  <?php print h($favorite_count['cnt']); ?>
+  <!----↑↑↑↑↑↑↑↑↑↑↑↑↑ここまでいいねの表示機能↑↑↑↑↑↑↑↑↑↑↑↑↑---->
 
-<?php print h($favorite_count['cnt']); ?>
+  <!----↓↓↓↓↓↓↓↓↓↓↓↓↓↓ここからリツイート表示機能↓↓↓↓↓↓↓↓↓↓↓↓↓↓---->
+  <?php
+  //ログインユーザーが各記事をリツイートしているかチェック
+    $retweet_check = $db->prepare('SELECT COUNT(*) AS cnt FROM posts WHERE member_id=? AND retweet_id=?');
+    $retweet_check->execute(array(
+    $member['id'],
+    $post['id']
+    ));
+    $retweet = $retweet_check->fetch();
+  ?>
+  <?php if ($retweet['cnt'] > 0): ?>
+    <!--リツイートされている場合の表示-->
+    <a href="index.php?retweet=<?php print h($post['id']); ?>"><i class="fas fa-retweet retweet"></i></a>
+  <?php else: ?>
+    <!--リツイートされていない場合の表示-->
+    <a href="index.php?retweet=<?php print h($post['id']); ?>"><i class="fas fa-retweet unretweet"></i></a>
+  <?php endif; ?>
 
-<?php
-//ログインユーザーが各記事に対してリツイートしているかをチェック
-  $retweet_check = $db->prepare('SELECT COUNT(*) AS cnt FROM posts WHERE member_id=? AND retweet_id=?');
-  $retweet_check->execute(array(
-  $member['id'],
-  $post['id']
-  ));
-  $retweet = $retweet_check->fetch();
-?>
-<?php if ($retweet['cnt'] > 0): ?>
-<!--リツイート数が０より大きければ-->
-  <a href="index.php?retweet=<?php print h($post['id']); ?>"><i class="fas fa-retweet retweet"></i></a>
-<?php else: ?>
-  <a href="index.php?retweet=<?php print h($post['id']); ?>"><i class="fas fa-retweet unretweet"></i></a>
-<?php endif; ?>
+  <?php //リツイート数の集計
+  $retweet_counts = $db->prepare('SELECT COUNT(*) as cnt FROM posts WHERE retweet_id=?');
+  $retweet_counts->execute(array($post['id']));
+  $retweet_count = $retweet_counts->fetch();
+  ?>
 
-<?php //リツイート数の集計
-$retweet_counts = $db->prepare('SELECT COUNT(*) as cnt FROM posts WHERE retweet_id=?');
-$retweet_counts->execute(array($post['id']));
-$retweet_count = $retweet_counts->fetch();
-?>
-
-<!--リツイート数の表示-->
-<?php print h($retweet_count['cnt']); ?>
-
-    </div>
+  <!--リツイート数の表示-->
+  <?php print h($retweet_count['cnt']); ?>
+  <!----↑↑↑↑↑↑↑↑↑↑↑↑↑ここまでリツイート表示機能↑↑↑↑↑↑↑↑↑↑↑↑↑---->
+  </div>
 <?php endforeach; ?>
 
 
